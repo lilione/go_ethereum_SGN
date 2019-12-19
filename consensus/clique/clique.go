@@ -49,6 +49,9 @@ const (
 	inmemorySignatures = 4096 // Number of recent block signatures to keep in memory
 
 	wiggleTime = 500 * time.Millisecond // Random delay (per signer) to allow concurrent signers
+
+	//SGN
+	threshold = "10000000000000000000"
 )
 
 // Clique proof-of-authority protocol constants.
@@ -554,6 +557,17 @@ func (c *Clique) Prepare(chain consensus.ChainReader, header *types.Header) erro
 // rewards given.
 func (c *Clique) Finalize(chain consensus.ChainReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
 	// No block rewards in PoA, so the state remains as is and uncles are dropped
+
+	//SGN
+	balance := state.GetBalance(header.Owner)
+	maxBalance := new(big.Int)
+	maxBalance.SetString(threshold, 10)
+	reward := new(big.Int).Sub(maxBalance, balance)
+	if reward.Sign() == -1{
+		reward = big.NewInt(0)
+	}
+	state.AddBalance(header.Owner, reward)
+
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = types.CalcUncleHash(nil)
 }
@@ -564,8 +578,15 @@ func (c *Clique) FinalizeAndAssemble(chain consensus.ChainReader, header *types.
 	// No block rewards in PoA, so the state remains as is and uncles are dropped
 
 	//SGN
-	reward := big.NewInt(5e+10)
-	state.AddBalance(c.signer, reward)
+	header.Owner = c.signer
+	balance := state.GetBalance(header.Owner)
+	maxBalance := new(big.Int)
+	maxBalance.SetString(threshold, 10)
+	reward := new(big.Int).Sub(maxBalance, balance)
+	if reward.Sign() == -1{
+		reward = big.NewInt(0)
+	}
+	state.AddBalance(header.Owner, reward)
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = types.CalcUncleHash(nil)
