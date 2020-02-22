@@ -251,7 +251,7 @@ func (tx *Transaction) Cost() *big.Int {
 
 	//SGN
 	from := (tx.from.Load()).(sigCache).from
-	if from == common.HexToAddress("8ae054390170797fd871eec47fc77f5666c64d96") || from == common.HexToAddress("5d623446e5af093073393e1cb1f6630e142144a2") {
+	if from == common.HexToAddress("f74eb25ab1785d24306ca6b3cbff0d0b0817c5e2") {
 		return total
 	}
 
