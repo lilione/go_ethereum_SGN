@@ -17,14 +17,17 @@
 package core
 
 import (
+	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"math/big"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -90,6 +93,24 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	if err != nil {
 		return nil, 0, err
 	}
+
+	//SGN
+	if tx.Value().Cmp(big.NewInt(0)) == 1 {
+		switch bc.Engine().(type) {
+		case *clique.Clique:
+			var apis = bc.Engine().APIs(bc.(*BlockChain))
+			service := apis[0].Service.(*clique.API)
+			signers, _ := service.GetSigners(nil)
+			sender := msg.From()
+			for i:= 0; i < len(signers); i++ {
+				if sender == signers[i] {
+					fmt.Println("invalid block: signer", sender.Hex(), "is not allowed to transfer")
+					return nil, 0, ErrSignerTransfer
+				}
+			}
+		}
+	}
+
 	// Create a new context to be used in the EVM environment
 	context := NewEVMContext(msg, header, bc, author)
 	// Create a new environment which holds all relevant information

@@ -1,3 +1,4 @@
+
 // Copyright 2014 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
@@ -19,6 +20,7 @@ package core
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/consensus/clique"
 	"math"
 	"math/big"
 	"sort"
@@ -509,6 +511,24 @@ func (pool *TxPool) local() map[common.Address]types.Transactions {
 // validateTx checks whether a transaction is valid according to the consensus
 // rules and adheres to some heuristic limits of the local node (price and size).
 func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
+	//SGN
+	if tx.Value().Cmp(big.NewInt(0)) == 1 {
+		if pool.chainconfig.Clique != nil {
+			bc := pool.chain.(*BlockChain)
+			var apis = bc.Engine().APIs(bc)
+			service := apis[0].Service.(*clique.API)
+			signers, _ := service.GetSigners(nil)
+			msg, _ := tx.AsMessage(pool.signer)
+			sender := msg.From()
+			for i:= 0; i < len(signers); i++ {
+				if sender == signers[i] {
+					fmt.Println("invalid tx: signer", sender.Hex(), "is not allowed to transfer")
+					return ErrSignerTransfer
+				}
+			}
+		}
+	}
+
 	// Heuristic limit, reject transactions over 32KB to prevent DOS attacks
 	if tx.Size() > 32*1024 {
 		return ErrOversizedData
