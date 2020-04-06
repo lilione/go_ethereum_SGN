@@ -417,7 +417,86 @@ func (c *Clique) snapshot(chain consensus.ChainReader, number uint64, hash commo
 		return nil, err
 	}
 	c.recents.Add(snap.Hash, snap)
+	// If we've generated a new checkpoint snapshot, save to disk
+	if snap.Number%checkpointInterval == 0 && len(headers) > 0 {
+		if err = snap.store(c.db); err != nil {
+			return nil, err
+		}
+		log.Trace("Stored voting snapshot to disk", "number", snap.Number, "hash", snap.Hash)
+	}
+	return snap, err
+}
 
+// snapshot retrieves the authorization snapshot at a given point in time.
+func (c *Clique) fakeSnapshot(chain consensus.ChainReader, number uint64, hash common.Hash, parents []*types.Header, signer common.Address) (*Snapshot, error) {
+	// Search for a snapshot in memory or on disk for checkpoints
+	var (
+		headers []*types.Header
+		snap    *Snapshot
+	)
+	for snap == nil {
+		// If an in-memory snapshot was found, use that
+		if s, ok := c.recents.Get(hash); ok {
+			snap = s.(*Snapshot)
+			break
+		}
+		// If an on-disk checkpoint snapshot can be found, use that
+		if number%checkpointInterval == 0 {
+			if s, err := loadSnapshot(c.config, c.signatures, c.db, hash); err == nil {
+				log.Trace("Loaded voting snapshot from disk", "number", number, "hash", hash)
+				snap = s
+				break
+			}
+		}
+		// If we're at the genesis, snapshot the initial state. Alternatively if we're
+		// at a checkpoint block without a parent (light client CHT), or we have piled
+		// up more headers than allowed to be reorged (chain reinit from a freezer),
+		// consider the checkpoint trusted and snapshot it.
+		if number == 0 || (number%c.config.Epoch == 0 && (len(headers) > params.ImmutabilityThreshold || chain.GetHeaderByNumber(number-1) == nil)) {
+			checkpoint := chain.GetHeaderByNumber(number)
+			if checkpoint != nil {
+				hash := checkpoint.Hash()
+
+				signers := make([]common.Address, (len(checkpoint.Extra)-extraVanity-extraSeal)/common.AddressLength)
+				for i := 0; i < len(signers); i++ {
+					copy(signers[i][:], checkpoint.Extra[extraVanity+i*common.AddressLength:])
+				}
+				snap = newSnapshot(c.config, c.signatures, number, hash, signers)
+				if err := snap.store(c.db); err != nil {
+					return nil, err
+				}
+				log.Info("Stored checkpoint snapshot to disk", "number", number, "hash", hash)
+				break
+			}
+		}
+		// No snapshot for this header, gather the header and move backward
+		var header *types.Header
+		if len(parents) > 0 {
+			// If we have explicit parents, pick from there (enforced)
+			header = parents[len(parents)-1]
+			if header.Hash() != hash || header.Number.Uint64() != number {
+				return nil, consensus.ErrUnknownAncestor
+			}
+			parents = parents[:len(parents)-1]
+		} else {
+			// No explicit parents (or no more left), reach out to the database
+			header = chain.GetHeader(hash, number)
+			if header == nil {
+				return nil, consensus.ErrUnknownAncestor
+			}
+		}
+		headers = append(headers, header)
+		number, hash = number-1, header.ParentHash
+	}
+	// Previous snapshot found, apply any pending headers on top of it
+	for i := 0; i < len(headers)/2; i++ {
+		headers[i], headers[len(headers)-1-i] = headers[len(headers)-1-i], headers[i]
+	}
+	snap, err := snap.fakeApply(headers, signer)
+	if err != nil {
+		return nil, err
+	}
+	c.recents.Add(snap.Hash, snap)
 	// If we've generated a new checkpoint snapshot, save to disk
 	if snap.Number%checkpointInterval == 0 && len(headers) > 0 {
 		if err = snap.store(c.db); err != nil {
@@ -568,6 +647,25 @@ func (c *Clique) Finalize(chain consensus.ChainReader, header *types.Header, sta
 	}
 	state.AddBalance(header.Owner, reward)
 
+	if header.Number.Int64() > 1 {
+		prevSnap, _ := c.snapshot(chain, header.Number.Uint64() - 1, header.ParentHash, nil)
+		nowSnap, _ := c.snapshot(chain, header.Number.Uint64(), header.Hash(), []*types.Header{header})
+		prevSigners := prevSnap.signers()
+		nowSigners := nowSnap.signers()
+		for _, prevSigner := range prevSigners {
+			ok := true
+			for _, nowSigner := range nowSigners {
+				if nowSigner == prevSigner {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				state.SetBalance(prevSigner, big.NewInt(0))
+			}
+		}
+	}
+
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = types.CalcUncleHash(nil)
 }
@@ -587,6 +685,35 @@ func (c *Clique) FinalizeAndAssemble(chain consensus.ChainReader, header *types.
 		reward = big.NewInt(0)
 	}
 	state.AddBalance(header.Owner, reward)
+
+	if header.Number.Int64() > 1 {
+		prevSnap, _ := c.snapshot(chain, header.Number.Uint64() - 1, header.ParentHash, nil)
+		prevSigners := prevSnap.signers()
+
+		isSigner := false
+		for _, signer := range prevSigners {
+			if signer == c.signer {
+				isSigner = true
+				break
+			}
+		}
+		if isSigner {
+			nowSnap, _ := c.fakeSnapshot(chain, header.Number.Uint64(), header.Hash(), []*types.Header{header}, c.signer)
+			nowSigners := nowSnap.signers()
+			for _, prevSigner := range prevSigners {
+				ok := true
+				for _, nowSigner := range nowSigners {
+					if nowSigner == prevSigner {
+						ok = false
+						break
+					}
+				}
+				if ok {
+					state.SetBalance(prevSigner, big.NewInt(0))
+				}
+			}
+		}
+	}
 
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = types.CalcUncleHash(nil)
