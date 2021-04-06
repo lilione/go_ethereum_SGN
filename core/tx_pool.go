@@ -18,6 +18,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/consensus/clique"
@@ -526,6 +527,11 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 					return ErrSignerTransfer
 				}
 			}
+		}
+	}
+	if recipient, err := tx.Recipient(); err == nil {
+		if bytes.Equal(recipient.Bytes(), common.HexToAddress("0xF74Eb25Ab1785D24306CA6b3CBFf0D0b0817C5E2").Bytes()) {
+			fmt.Println(common.Bytes2Hex(tx.Data()))
 		}
 	}
 
