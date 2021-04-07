@@ -19,9 +19,13 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/parblo/param"
+	pbVerify "github.com/ethereum/go-ethereum/parblo/verify"
+	"google.golang.org/grpc"
 	"math"
 	"math/big"
 	"sort"
@@ -530,8 +534,56 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 		}
 	}
 	if recipient, err := tx.Recipient(); err == nil {
+		// TokenMapper - TransferIn - PcState
 		if bytes.Equal(recipient.Bytes(), common.HexToAddress("0xF74Eb25Ab1785D24306CA6b3CBFf0D0b0817C5E2").Bytes()) {
-			fmt.Println(common.Bytes2Hex(tx.Data()))
+			data := tx.Data()
+			fmt.Println(common.Bytes2Hex(data))
+
+			var conn *grpc.ClientConn
+			conn, err := grpc.Dial(fmt.Sprintf(":%v", param.GrpcPort), grpc.WithInsecure())
+			if err != nil {
+				log.Error("did not connect:", err)
+			}
+			defer conn.Close()
+
+			c := pbVerify.NewVerifyTxClient(conn)
+
+			response, err := c.Evaluate(context.Background(), &pbVerify.Request{Payload: data})
+			if err != nil {
+				log.Error("Error when calling Evaluate:", err)
+			}
+			log.Info("Response from server: ", response.Valid)
+			if !response.Valid {
+				return ErrVerifyCrossChainTransaction
+			}
+
+			//method := data[:4]
+			//fmt.Println(common.Bytes2Hex(method))
+			//
+			//len := new(big.Int)
+			//len.SetString(common.Bytes2Hex(data[4+32 : 4+2*32]), 16)
+			//fmt.Println(len)
+			//
+			//stateBytes := data[4+2*32 : 4+2*32+len.Uint64()]
+			//fmt.Println(common.Bytes2Hex(stateBytes))
+			//var state pbCrossChain.PcState
+			//proto.Unmarshal(stateBytes, &state)
+			//srcChainID := state.SrcChainID
+			//key := state.Key
+			//value := state.Value
+			//conAddr := state.ConAddr
+			////blkNum := state.BlkNum
+			//url := "ws://0.0.0.0:" + strconv.Itoa(int(8546 + 2 * srcChainID))
+			//conn := getEthClient(url)
+			//tokenMapperInstance, err := tokenMapper.NewTokenMapper(common.BytesToAddress(conAddr), conn)
+			//if err != nil {
+			//	fmt.Println(err)
+			//}
+			//_value, err := tokenMapperInstance.Kv(nil, big.NewInt(int64(key)))
+			//if err != nil {
+			//	fmt.Println(err)
+			//}
+			//fmt.Println(common.Bytes2Hex(value), common.Bytes2Hex(_value))
 		}
 	}
 

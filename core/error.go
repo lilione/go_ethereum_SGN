@@ -38,4 +38,5 @@ var (
 
 	//SGN
 	ErrSignerTransfer = errors.New("signers are not allowed to transfer")
+	ErrVerifyCrossChainTransaction = errors.New("cross chain transactions contains invalid states")
 )
