@@ -533,21 +533,18 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			}
 		}
 	}
+	var conn *grpc.ClientConn
+	conn, err := grpc.Dial(fmt.Sprintf(":%v", param.GrpcPort), grpc.WithInsecure())
+	if err != nil {
+		log.Error("did not connect:", err)
+	}
+	defer conn.Close()
+	c := pbVerify.NewVerifyTxClient(conn)
 	if recipient, err := tx.Recipient(); err == nil {
 		// TokenMapper - TransferIn - PcState
 		if bytes.Equal(recipient.Bytes(), common.HexToAddress("0xF74Eb25Ab1785D24306CA6b3CBFf0D0b0817C5E2").Bytes()) {
 			data := tx.Data()
 			fmt.Println(common.Bytes2Hex(data))
-
-			var conn *grpc.ClientConn
-			conn, err := grpc.Dial(fmt.Sprintf(":%v", param.GrpcPort), grpc.WithInsecure())
-			if err != nil {
-				log.Error("did not connect:", err)
-			}
-			defer conn.Close()
-
-			c := pbVerify.NewVerifyTxClient(conn)
-
 			response, err := c.Evaluate(context.Background(), &pbVerify.Request{Payload: data})
 			if err != nil {
 				log.Error("Error when calling Evaluate:", err)
@@ -556,7 +553,6 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 			if !response.Valid {
 				return ErrVerifyCrossChainTransaction
 			}
-
 			//method := data[:4]
 			//fmt.Println(common.Bytes2Hex(method))
 			//
