@@ -18,7 +18,6 @@
 package core
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -540,46 +539,18 @@ func (pool *TxPool) validateTx(tx *types.Transaction, local bool) error {
 	}
 	defer conn.Close()
 	c := pbVerify.NewVerifyTxClient(conn)
-	if recipient, err := tx.Recipient(); err == nil {
-		// TokenMapper - TransferIn - PcState
-		if bytes.Equal(recipient.Bytes(), common.HexToAddress("0xF74Eb25Ab1785D24306CA6b3CBFf0D0b0817C5E2").Bytes()) {
-			data := tx.Data()
-			fmt.Println(common.Bytes2Hex(data))
-			response, err := c.Evaluate(context.Background(), &pbVerify.Request{Payload: data})
-			if err != nil {
-				log.Error("Error when calling Evaluate:", err)
-			}
-			log.Info("Response from server: ", response.Valid)
+	recipient, err := tx.Recipient()
+	data := tx.Data()
+	if err == nil && len(data) > 0 {
+		fmt.Println(common.Bytes2Hex(data))
+		response, err := c.Evaluate(context.Background(), &pbVerify.Request{ConAddr: recipient.Bytes(), Payload: data})
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println("Response from server: ", response.Valid)
 			if !response.Valid {
 				return ErrVerifyCrossChainTransaction
 			}
-			//method := data[:4]
-			//fmt.Println(common.Bytes2Hex(method))
-			//
-			//len := new(big.Int)
-			//len.SetString(common.Bytes2Hex(data[4+32 : 4+2*32]), 16)
-			//fmt.Println(len)
-			//
-			//stateBytes := data[4+2*32 : 4+2*32+len.Uint64()]
-			//fmt.Println(common.Bytes2Hex(stateBytes))
-			//var state pbCrossChain.PcState
-			//proto.Unmarshal(stateBytes, &state)
-			//srcChainID := state.SrcChainID
-			//key := state.Key
-			//value := state.Value
-			//conAddr := state.ConAddr
-			////blkNum := state.BlkNum
-			//url := "ws://0.0.0.0:" + strconv.Itoa(int(8546 + 2 * srcChainID))
-			//conn := getEthClient(url)
-			//tokenMapperInstance, err := tokenMapper.NewTokenMapper(common.BytesToAddress(conAddr), conn)
-			//if err != nil {
-			//	fmt.Println(err)
-			//}
-			//_value, err := tokenMapperInstance.Kv(nil, big.NewInt(int64(key)))
-			//if err != nil {
-			//	fmt.Println(err)
-			//}
-			//fmt.Println(common.Bytes2Hex(value), common.Bytes2Hex(_value))
 		}
 	}
 
