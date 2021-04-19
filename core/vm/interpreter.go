@@ -226,9 +226,11 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}
 		// Static portion of gas
 		cost = operation.constantGas // For tracing
-		//if !contract.UseGas(operation.constantGas) {
-		//	return nil, ErrOutOfGas
-		//}
+
+		//Parblo: comment the following lines to make gas cost 0
+		if !contract.UseGas(operation.constantGas) {
+			return nil, ErrOutOfGas
+		}
 
 		var memorySize uint64
 		// calculate the new memory size and expand the memory to fit
@@ -253,9 +255,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			var dynamicCost uint64
 			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, memorySize)
 			cost += dynamicCost // total cost, for debug tracing
-			//if err != nil || !contract.UseGas(dynamicCost) {
-			//	return nil, ErrOutOfGas
-			//}
+
+			//Parblo: comment the following lines to make gas cost 0
+			if err != nil || !contract.UseGas(dynamicCost) {
+				return nil, ErrOutOfGas
+			}
+
 		}
 		if memorySize > 0 {
 			mem.Resize(memorySize)
